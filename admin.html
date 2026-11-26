@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>단어테스트 관리</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="config.js"></script>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#fff; --line:#e3e6ea; --text:#1f2933; --sub:#6b7480;
+    --main:#2f6fde; --main-d:#1f56b8; --ok:#1f9d55; --warn:#d97706; --bad:#d64545; --soft:#eef3fc;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;background:var(--bg);color:var(--text);font-size:15px}
+  .hidden{display:none !important}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--text);border-radius:8px;padding:8px 14px}
+  button:hover{background:#f0f2f5}
+  button.primary{background:var(--main);border-color:var(--main);color:#fff}
+  button.primary:hover{background:var(--main-d)}
+  button.danger{color:var(--bad);border-color:#f1c4c4}
+  button.small{padding:4px 10px;font-size:13px}
+  button:disabled{opacity:.5;cursor:default}
+  input,select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff;color:var(--text)}
+  input:focus,select:focus{outline:2px solid #bcd3fb;border-color:var(--main)}
+  label{display:block;font-size:13px;color:var(--sub);margin:12px 0 4px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+  .card h3{margin:0 0 12px;font-size:17px}
+  .muted{color:var(--sub);font-size:13px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .grow{flex:1}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{color:var(--sub);font-weight:600;font-size:13px;background:#fafbfc}
+  tr.click{cursor:pointer} tr.click:hover{background:var(--soft)}
+  .tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;background:#eef0f3;color:var(--sub)}
+  .tag.ok{background:#e3f5ea;color:var(--ok)} .tag.warn{background:#fdf1dc;color:var(--warn)} .tag.bad{background:#fbe5e5;color:var(--bad)}
+  .msg{padding:10px 12px;border-radius:8px;font-size:14px;margin-top:12px}
+  .msg.err{background:#fbe5e5;color:var(--bad)} .msg.info{background:var(--soft);color:var(--main-d)}
+
+  /* 로그인 화면 */
+  #authView,#setupView,#waitView{max-width:440px;margin:60px auto;padding:0 16px}
+  .brand{text-align:center;margin-bottom:24px}
+  .brand h1{margin:0;font-size:24px} .brand p{margin:6px 0 0;color:var(--sub)}
+  .seg{display:flex;background:#e9ecf0;border-radius:10px;padding:4px;margin-bottom:16px}
+  .seg button{flex:1;border:0;background:transparent;border-radius:8px;padding:9px 4px;font-size:14px}
+  .seg button.on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);font-weight:600}
+  .full{width:100%}
+  .card .full+.full{margin-top:8px}
+
+  /* 메인 */
+  header{background:#fff;border-bottom:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  header .title{font-weight:700;font-size:17px}
+  header .code{font-size:13px;color:var(--sub)}
+  header .code b{color:var(--main);letter-spacing:1px}
+  nav{background:#fff;border-bottom:1px solid var(--line);padding:0 12px;display:flex;gap:4px;overflow-x:auto}
+  nav button{border:0;border-bottom:3px solid transparent;border-radius:0;padding:12px 14px;background:transparent;white-space:nowrap}
+  nav button.on{border-bottom-color:var(--main);color:var(--main);font-weight:600}
+  main{max-width:1100px;margin:20px auto;padding:0 16px}
+  .two{display:grid;grid-template-columns:320px 1fr;gap:16px}
+  @media(max-width:860px){.two{grid-template-columns:1fr}}
+  .pill-list{display:flex;flex-wrap:wrap;gap:6px}
+  .check{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:14px;color:var(--text);margin:0}
+  .check input{margin:0}
+  .scroll{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+  .detail{background:#fafbfc;padding:12px 16px}
+  .wrong{color:var(--bad)} .right{color:var(--ok)}
+  .big-code{font-size:34px;font-weight:800;letter-spacing:6px;color:var(--main)}
+
+  /* 모달 */
+  #modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+  #modal .box{background:#fff;border-radius:12px;max-width:440px;width:100%;padding:20px}
+  #modal h4{margin:0 0 10px;font-size:17px}
+  #modal .btns{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2933;color:#fff;padding:10px 18px;border-radius:99px;font-size:14px;z-index:60;opacity:0;transition:opacity .2s;pointer-events:none}
+  #toast.show{opacity:1}
+  #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.6);z-index:40;font-size:15px;color:var(--sub)}
+</style>
+</head>
+<body>
+
+<div id="loading">불러오는 중…</div>
+
+<!-- ===================== 로그인 / 가입 ===================== -->
+<div id="authView" class="hidden">
+  <div class="brand"><h1>단어테스트 관리</h1><p>선생님·원장님용 관리 페이지</p></div>
+  <div class="seg">
+    <button data-mode="login" class="on">로그인</button>
+    <button data-mode="create">새 학원 만들기</button>
+    <button data-mode="join">학원 합류하기</button>
+  </div>
+  <div class="card">
+    <div id="fName" class="hidden"><label>선생님 이름</label><input id="aName" class="full" placeholder="예: 이선희"></div>
+    <div id="fAcademy" class="hidden"><label>학원 이름</label><input id="aAcademy" class="full" placeholder="예: 루체테 도봉캠퍼스"></div>
+    <div id="fCode" class="hidden"><label>학원 코드 (원장님께 받은 6자리)</label><input id="aCode" class="full" placeholder="예: ABC123" style="text-transform:uppercase"></div>
+    <label>이메일</label><input id="aEmail" class="full" type="email" autocomplete="username">
+    <label>비밀번호 <span id="pwHint" class="hidden">(6자 이상)</span></label><input id="aPw" class="full" type="password" autocomplete="current-password">
+    <div style="margin-top:18px"><button id="authBtn" class="primary full">로그인</button></div>
+    <div id="authMsg"></div>
+  </div>
+</div>
+
+<!-- 로그인은 됐지만 학원 소속이 없는 경우 -->
+<div id="setupView" class="hidden">
+  <div class="brand"><h1>학원 연결하기</h1><p>계정은 있지만 아직 학원에 연결되지 않았어요.</p></div>
+  <div class="seg">
+    <button data-smode="create" class="on">새 학원 만들기</button>
+    <button data-smode="join">학원 합류하기</button>
+  </div>
+  <div class="card">
+    <label>선생님 이름</label><input id="sName" class="full">
+    <div id="sfAcademy"><label>학원 이름</label><input id="sAcademy" class="full"></div>
+    <div id="sfCode" class="hidden"><label>학원 코드</label><input id="sCode" class="full" style="text-transform:uppercase"></div>
+    <div style="margin-top:18px"><button id="setupBtn" class="primary full">연결하기</button></div>
+    <button class="full" onclick="logout()">로그아웃</button>
+    <div id="setupMsg"></div>
+  </div>
+</div>
+
+<!-- 승인 대기 / 거절 -->
+<div id="waitView" class="hidden">
+  <div class="brand"><h1 id="waitTitle">승인을 기다리고 있어요</h1><p id="waitText"></p></div>
+  <div class="card">
+    <button class="primary full" onclick="loadMe()">승인됐는지 다시 확인</button>
+    <button class="full" onclick="logout()">로그아웃</button>
+  </div>
+</div>
+
+<!-- ===================== 메인 ===================== -->
+<div id="mainView" class="hidden">
+  <header>
+    <span class="title" id="hAcademy"></span>
+    <span class="code">학원 코드 <b id="hCode"></b></span>
+    <span class="grow"></span>
+    <span class="muted" id="hUser"></span>
+    <button class="small" onclick="logout()">로그아웃</button>
+  </header>
+  <nav>
+    <button data-tab="students" class="on">반·학생</button>
+    <button data-tab="lists">단어 리스트</button>
+    <button data-tab="tests">시험</button>
+    <button data-tab="results">결과</button>
+    <button data-tab="teachers" id="tabTeachers" class="hidden">선생님 관리</button>
+  </nav>
+  <main>
+
+    <!-- 반·학생 -->
+    <section id="tab-students">
+      <div class="two">
+        <div>
+          <div class="card">
+            <h3>반</h3>
+            <div class="row"><input id="newClass" class="grow" placeholder="새 반 이름 (예: M2)"><button class="primary" onclick="addClass()">추가</button></div>
+            <table style="margin-top:12px"><tbody id="classRows"></tbody></table>
+          </div>
+          <div class="card">
+            <h3>학생 추가</h3>
+            <label>이름</label><input id="stName" class="full">
+            <label>반</label><select id="stClass" class="full"></select>
+            <label>비밀번호 (숫자 4자리)</label><input id="stPin" class="full" inputmode="numeric" maxlength="4">
+            <div style="margin-top:14px"><button class="primary full" onclick="addStudent()">학생 추가</button></div>
+          </div>
+          <div class="card">
+            <h3>엑셀로 한꺼번에 등록</h3>
+            <p class="muted" style="margin-top:0">칸: 이름 / 반 / 비밀번호(숫자 4자리). 없는 반은 자동으로 만들어요.</p>
+            <button class="full" onclick="downloadStudentTemplate()">양식 내려받기</button>
+            <input type="file" id="stFile" accept=".xlsx,.xls,.csv" class="full" style="margin-top:8px">
+            <div id="stPreview"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="row" style="margin-bottom:12px">
+            <h3 style="margin:0" class="grow">학생 목록</h3>
+            <select id="stFilter"></select>
+            <label class="check"><input type="checkbox" id="stShowOff"> 퇴원생 보기</label>
+          </div>
+          <table><thead><tr><th>이름</th><th>반</th><th>상태</th><th></th></tr></thead><tbody id="studentRows"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 단어 리스트 -->
+    <section id="tab-lists" class="hidden">
+      <div class="card">
+        <h3>단어 리스트 올리기</h3>
+        <p class="muted" style="margin-top:0">엑셀·CSV 칸: 단어 / 뜻 / 예문(선택). 예문 안에 그 단어가 들어 있으면 빈칸 문제로도 나와요.</p>
+        <div class="row">
+          <input id="lsTitle" class="grow" placeholder="리스트 제목 (예: M2 Unit 3)">
+          <input type="file" id="lsFile" accept=".xlsx,.xls,.csv">
+          <button onclick="downloadWordTemplate()">양식 내려받기</button>
+        </div>
+        <div id="lsPreview"></div>
+      </div>
+      <div class="card">
+        <h3>리스트 목록</h3>
+        <table><thead><tr><th>제목</th><th>단어 수</th><th>올린 날짜</th><th></th></tr></thead><tbody id="listRows"></tbody></table>
+      </div>
+    </section>
+
+    <!-- 시험 -->
+    <section id="tab-tests" class="hidden">
+      <div class="card">
+        <h3>시험 만들기</h3>
+        <div class="row">
+          <div class="grow"><label>시험 제목</label><input id="tsTitle" class="full" placeholder="예: M2 Unit 3 단어시험"></div>
+          <div class="grow"><label>단어 리스트</label><select id="tsList" class="full"></select></div>
+          <div style="width:130px"><label>문항 수</label><input id="tsCount" class="full" type="number" min="1"></div>
+        </div>
+        <label>대상 반 (여러 개 선택 가능)</label>
+        <div class="pill-list" id="tsClasses"></div>
+        <div style="margin-top:16px"><button class="primary" onclick="addTest()">시험 만들기</button></div>
+      </div>
+      <div class="card">
+        <h3>시험 목록</h3>
+        <table><thead><tr><th>제목</th><th>리스트</th><th>문항</th><th>대상 반</th><th>응시</th><th>상태</th><th></th></tr></thead><tbody id="testRows"></tbody></table>
+      </div>
+    </section>
+
+    <!-- 결과 -->
+    <section id="tab-results" class="hidden">
+      <div class="card">
+        <div class="row">
+          <select id="rsTest" class="grow"></select>
+          <select id="rsClass"></select>
+          <button onclick="loadResults()">새로고침</button>
+          <button class="primary" onclick="downloadResults()">엑셀 내려받기</button>
+        </div>
+        <p class="muted" id="rsSummary"></p>
+        <table><thead><tr><th>반</th><th>이름</th><th>응시 횟수</th><th>첫 점수</th><th>최고 점수</th><th>최근 응시</th></tr></thead><tbody id="resultRows"></tbody></table>
+      </div>
+    </section>
+
+    <!-- 선생님 관리 (원장만) -->
+    <section id="tab-teachers" class="hidden">
+      <div class="card">
+        <h3>학원 코드</h3>
+        <div class="row"><span class="big-code" id="bigCode"></span><button onclick="copyCode()">복사</button></div>
+        <p class="muted">학생은 이 코드로 시험을 보고, 선생님은 이 코드로 합류 신청을 해요.</p>
+      </div>
+      <div class="card">
+        <h3>선생님 목록</h3>
+        <table><thead><tr><th>이름</th><th>이메일</th><th>역할</th><th>상태</th><th>신청일</th><th></th></tr></thead><tbody id="teacherRows"></tbody></table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="modal" class="hidden"><div class="box"><h4 id="mTitle"></h4><div id="mBody"></div><div class="btns" id="mBtns"></div></div></div>
+<div id="toast"></div>
+
+<script>
+// ============================================================
+// 기본 준비
+// ============================================================
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let me = null, academy = null;
+const S = { classes: [], students: [], lists: [], tests: [], teachers: [] };
+let resultCache = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtDate = d => d ? new Date(d).toLocaleDateString('ko-KR', {year:'2-digit', month:'2-digit', day:'2-digit'}) : '';
+const fmtDT = d => d ? new Date(d).toLocaleString('ko-KR', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) : '';
+const className = id => (S.classes.find(c => c.id === id) || {}).name || '(반 없음)';
+const pct = (s, t) => t ? Math.round(s / t * 100) : 0;
+const TYPE = { en2ko_mc:'영→뜻 객관식', ko2en_mc:'뜻→영 객관식', spelling:'철자 쓰기', dictation:'받아쓰기', blank:'예문 빈칸' };
+
+function show(view) {
+  ['authView','setupView','waitView','mainView'].forEach(v => $(v).classList.toggle('hidden', v !== view));
+  $('loading').classList.add('hidden');
+}
+function busy(on) { $('loading').classList.toggle('hidden', !on); }
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 2200); }
+function msg(el, text, type = 'err') { $(el).innerHTML = text ? `<div class="msg ${type}">${esc(text)}</div>` : ''; }
+function errText(e) {
+  const m = (e && (e.message || e.error_description)) || String(e);
+  if (/Invalid login credentials/i.test(m)) return '이메일 또는 비밀번호가 맞지 않습니다.';
+  if (/already registered|already been registered/i.test(m)) return '이미 가입된 이메일입니다. "로그인"에서 로그인해 주세요.';
+  if (/Password should be at least/i.test(m)) return '비밀번호는 6자 이상이어야 합니다.';
+  if (/valid email|invalid format/i.test(m)) return '이메일 형식이 올바르지 않습니다.';
+  if (/rate limit/i.test(m)) return '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.';
+  if (/duplicate key.*classes/i.test(m)) return '같은 이름의 반이 이미 있습니다.';
+  return m;
+}
+
+// 모달 (확인창 / 입력창)
+function modal(title, bodyHTML, buttons) {
+  return new Promise(resolve => {
+    $('mTitle').textContent = title;
+    $('mBody').innerHTML = bodyHTML;
+    $('mBtns').innerHTML = '';
+    buttons.forEach(b => {
+      const el = document.createElement('button');
+      el.textContent = b.text;
+      if (b.cls) el.className = b.cls;
+      el.onclick = () => { const v = b.value === undefined ? true : b.value; if (b.check && !b.check()) return; $('modal').classList.add('hidden'); resolve(typeof v === 'function' ? v() : v); };
+      $('mBtns').appendChild(el);
+    });
+    $('modal').classList.remove('hidden');
+    const first = $('mBody').querySelector('input'); if (first) first.focus();
+  });
+}
+const confirmBox = (title, text, okText = '확인', danger = false) =>
+  modal(title, `<p style="margin:0;line-height:1.6">${text}</p>`, [{text:'취소', value:false}, {text:okText, cls: danger ? 'primary' : 'primary', value:true}]);
+
+// ============================================================
+// 로그인 / 가입
+// ============================================================
+let authMode = 'login', setupMode = 'create';
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
+  authMode = b.dataset.mode;
+  document.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === b));
+  $('fName').classList.toggle('hidden', authMode === 'login');
+  $('fAcademy').classList.toggle('hidden', authMode !== 'create');
+  $('fCode').classList.toggle('hidden', authMode !== 'join');
+  $('pwHint').classList.toggle('hidden', authMode === 'login');
+  $('aPw').autocomplete = authMode === 'login' ? 'current-password' : 'new-password';
+  $('authBtn').textContent = { login:'로그인', create:'가입하고 학원 만들기', join:'가입하고 합류 신청' }[authMode];
+  msg('authMsg', '');
+});
+document.querySelectorAll('[data-smode]').forEach(b => b.onclick = () => {
+  setupMode = b.dataset.smode;
+  document.querySelectorAll('[data-smode]').forEach(x => x.classList.toggle('on', x === b));
+  $('sfAcademy').classList.toggle('hidden', setupMode !== 'create');
+  $('sfCode').classList.toggle('hidden', setupMode !== 'join');
+});
+$('aPw').addEventListener('keydown', e => { if (e.key === 'Enter') $('authBtn').click(); });
+
+$('authBtn').onclick = async () => {
+  const email = $('aEmail').value.trim(), pw = $('aPw').value;
+  const name = $('aName').value.trim(), acad = $('aAcademy').value.trim(), code = $('aCode').value.trim().toUpperCase();
+  if (!email || !pw) return msg('authMsg', '이메일과 비밀번호를 입력해 주세요.');
+  if (authMode !== 'login' && !name) return msg('authMsg', '선생님 이름을 입력해 주세요.');
+  if (authMode === 'create' && !acad) return msg('authMsg', '학원 이름을 입력해 주세요.');
+  if (authMode === 'join' && code.length !== 6) return msg('authMsg', '학원 코드 6자리를 입력해 주세요.');
+  $('authBtn').disabled = true; msg('authMsg', '');
+  try {
+    if (authMode === 'login') {
+      const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+      if (error) throw error;
+    } else {
+      const { data, error } = await sb.auth.signUp({ email, password: pw });
+      if (error) throw error;
+      if (!data.session) {
+        msg('authMsg', '가입은 됐지만 이메일 인증이 켜져 있어요. Supabase에서 Confirm email을 끄거나, 받은 메일의 링크를 누른 뒤 로그인해 주세요.', 'info');
+        return;
+      }
+      const r = authMode === 'create'
+        ? await sb.rpc('create_academy', { p_academy_name: acad, p_teacher_name: name })
+        : await sb.rpc('join_academy', { p_code: code, p_teacher_name: name });
+      if (r.error) { await loadMe(); msg('setupMsg', errText(r.error)); return; }
+    }
+    await loadMe();
+  } catch (e) { msg('authMsg', errText(e)); }
+  finally { $('authBtn').disabled = false; }
+};
+
+$('setupBtn').onclick = async () => {
+  const name = $('sName').value.trim();
+  if (!name) return msg('setupMsg', '선생님 이름을 입력해 주세요.');
+  const r = setupMode === 'create'
+    ? await sb.rpc('create_academy', { p_academy_name: $('sAcademy').value.trim(), p_teacher_name: name })
+    : await sb.rpc('join_academy', { p_code: $('sCode').value.trim().toUpperCase(), p_teacher_name: name });
+  if (r.error) return msg('setupMsg', errText(r.error));
+  msg('setupMsg', '');
+  loadMe();
+};
+
+async function logout() { await sb.auth.signOut(); me = null; academy = null; show('authView'); }
+
+// 로그인 상태 확인 → 알맞은 화면으로
+async function loadMe() {
+  busy(true);
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return show('authView');
+  const { data: t, error } = await sb.from('teachers').select('*').eq('id', session.user.id).maybeSingle();
+  if (error) { show('authView'); return msg('authMsg', errText(error)); }
+  if (!t) return show('setupView');
+  me = t;
+  if (t.status !== 'approved') {
+    $('waitTitle').textContent = t.status === 'rejected' ? '합류 신청이 거절되었어요' : '승인을 기다리고 있어요';
+    $('waitText').textContent = t.status === 'rejected' ? '원장님께 문의해 주세요.' : '원장님이 승인하면 바로 사용할 수 있어요.';
+    return show('waitView');
+  }
+  const { data: a } = await sb.from('academies').select('*').eq('id', t.academy_id).single();
+  academy = a;
+  $('hAcademy').textContent = a.name;
+  $('hCode').textContent = a.code;
+  $('bigCode').textContent = a.code;
+  $('hUser').textContent = `${t.name} ${t.role === 'owner' ? '원장님' : '선생님'}`;
+  $('tabTeachers').classList.toggle('hidden', t.role !== 'owner');
+  await loadAll();
+  show('mainView');
+}
+
+// ============================================================
+// 데이터 불러오기
+// ============================================================
+async function loadAll() {
+  const q = [
+    sb.from('classes').select('*').order('name'),
+    sb.from('students').select('id,name,class_id,active,created_at').order('name'),
+    sb.from('word_lists').select('id,title,created_at,words(count)').order('created_at', { ascending: false }),
+    sb.from('tests').select('*, test_classes(class_id), attempts(count)').order('created_at', { ascending: false }),
+  ];
+  if (me.role === 'owner') q.push(sb.from('teachers').select('*').order('created_at'));
+  const r = await Promise.all(q);
+  const err = r.find(x => x.error); if (err) toast(errText(err.error));
+  S.classes = r[0].data || []; S.students = r[1].data || [];
+  S.lists = (r[2].data || []).map(l => ({ ...l, count: l.words?.[0]?.count || 0 }));
+  S.tests = (r[3].data || []).map(t => ({ ...t, classIds: t.test_classes.map(x => x.class_id), attemptCount: t.attempts?.[0]?.count || 0 }));
+  S.teachers = r[4]?.data || [];
+  renderAll();
+}
+function renderAll() { renderClasses(); renderStudents(); renderLists(); renderTests(); renderResultFilters(); renderTeachers(); }
+
+// 탭 전환
+document.querySelectorAll('nav [data-tab]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav [data-tab]').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('main section').forEach(s => s.classList.toggle('hidden', s.id !== 'tab-' + b.dataset.tab));
+  if (b.dataset.tab === 'results') loadResults();
+});
+
+// ============================================================
+// 반·학생
+// ============================================================
+function classOptions(sel, withAll, allText = '전체 반') {
+  return (withAll ? `<option value="">${allText}</option>` : '') +
+    S.classes.map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+}
+function renderClasses() {
+  $('classRows').innerHTML = S.classes.length ? S.classes.map(c => {
+    const n = S.students.filter(s => s.class_id === c.id && s.active).length;
+    return `<tr><td>${esc(c.name)}</td><td class="muted">${n}명</td>
+      <td style="text-align:right"><button class="small" onclick="renameClass('${c.id}')">이름 변경</button>
+      <button class="small danger" onclick="deleteClass('${c.id}')">삭제</button></td></tr>`;
+  }).join('') : '<tr><td class="muted">아직 반이 없어요. 위에서 반을 먼저 추가하세요.</td></tr>';
+  const keep = $('stClass').value; $('stClass').innerHTML = classOptions(keep);
+  const keepF = $('stFilter').value; $('stFilter').innerHTML = classOptions(keepF, true);
+}
+async function addClass() {
+  const name = $('newClass').value.trim(); if (!name) return;
+  const { error } = await sb.from('classes').insert({ academy_id: academy.id, name });
+  if (error) return toast(errText(error));
+  $('newClass').value = ''; toast('반을 추가했어요'); loadAll();
+}
+async function renameClass(id) {
+  const c = S.classes.find(x => x.id === id);
+  const v = await modal('반 이름 변경', `<input id="mIn" class="full" value="${esc(c.name)}">`, [{text:'취소', value:null}, {text:'저장', cls:'primary', value:() => $('mIn').value.trim()}]);
+  if (!v || v === c.name) return;
+  const { error } = await sb.from('classes').update({ name: v }).eq('id', id);
+  if (error) return toast(errText(error));
+  loadAll();
+}
+async function deleteClass(id) {
+  const c = S.classes.find(x => x.id === id);
+  if (!await confirmBox('반 삭제', `<b>${esc(c.name)}</b> 반을 삭제할까요?<br>학생과 시험 결과는 지워지지 않고, 학생은 "반 없음"으로 바뀌어요.<br>이 반에 배정된 시험에서도 빠져요.`, '삭제', true)) return;
+  const { error } = await sb.from('classes').delete().eq('id', id);
+  if (error) return toast(errText(error));
+  toast('삭제했어요'); loadAll();
+}
+
+function renderStudents() {
+  const f = $('stFilter').value, off = $('stShowOff').checked;
+  const list = S.students.filter(s => (!f || s.class_id === f) && (off || s.active));
+  $('studentRows').innerHTML = list.length ? list.map(s => `<tr>
+      <td>${esc(s.name)}</td>
+      <td><select onchange="moveStudent('${s.id}', this.value)">${classOptions(s.class_id, true, '(반 없음)')}</select></td>
+      <td>${s.active ? '<span class="tag ok">재원</span>' : '<span class="tag">퇴원</span>'}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="small" onclick="resetPin('${s.id}')">비밀번호 재설정</button>
+        <button class="small ${s.active ? 'danger' : ''}" onclick="toggleStudent('${s.id}')">${s.active ? '퇴원' : '복귀'}</button>
+        ${!s.active ? `<button class="small danger" onclick="deleteStudent('${s.id}')">삭제</button>` : ''}
+      </td></tr>`).join('') : '<tr><td colspan="4" class="muted">학생이 없어요.</td></tr>';
+}
+$('stFilter').onchange = renderStudents; $('stShowOff').onchange = renderStudents;
+
+const validPin = p => /^\d{4}$/.test(p);
+async function addStudent() {
+  const name = $('stName').value.trim(), class_id = $('stClass').value || null, pin = $('stPin').value.trim();
+  if (!name) return toast('이름을 입력해 주세요');
+  if (!validPin(pin)) return toast('비밀번호는 숫자 4자리예요');
+  const { error } = await sb.from('students').insert({ academy_id: academy.id, class_id, name, pin_hash: pin });
+  if (error) return toast(errText(error));
+  $('stName').value = ''; $('stPin').value = ''; $('stName').focus();
+  toast(`${name} 학생을 추가했어요`); loadAll();
+}
+async function moveStudent(id, class_id) {
+  const { error } = await sb.from('students').update({ class_id: class_id || null }).eq('id', id);
+  if (error) return toast(errText(error));
+  toast('반을 옮겼어요'); loadAll();
+}
+async function resetPin(id) {
+  const s = S.students.find(x => x.id === id);
+  const v = await modal(`${s.name} 비밀번호 재설정`, '<label style="margin-top:0">새 비밀번호 (숫자 4자리)</label><input id="mIn" class="full" inputmode="numeric" maxlength="4">',
+    [{text:'취소', value:null}, {text:'저장', cls:'primary', value:() => $('mIn').value.trim(), check:() => validPin($('mIn').value.trim()) || (toast('숫자 4자리를 입력해 주세요'), false)}]);
+  if (!v) return;
+  const { error } = await sb.from('students').update({ pin_hash: v }).eq('id', id);
+  if (error) return toast(errText(error));
+  toast('비밀번호를 바꿨어요 (잠금도 풀렸어요)');
+}
+async function toggleStudent(id) {
+  const s = S.students.find(x => x.id === id);
+  if (s.active && !await confirmBox('퇴원 처리', `<b>${esc(s.name)}</b> 학생을 퇴원 처리할까요?<br>로그인 목록에서 사라지고, 시험 기록은 그대로 남아요.`, '퇴원')) return;
+  const { error } = await sb.from('students').update({ active: !s.active }).eq('id', id);
+  if (error) return toast(errText(error));
+  loadAll();
+}
+async function deleteStudent(id) {
+  const s = S.students.find(x => x.id === id);
+  if (!await confirmBox('학생 완전 삭제', `<b>${esc(s.name)}</b> 학생과 <b>모든 시험 기록</b>을 지울까요? 되돌릴 수 없어요.`, '완전 삭제', true)) return;
+  const { error } = await sb.from('students').delete().eq('id', id);
+  if (error) return toast(errText(error));
+  toast('삭제했어요'); loadAll();
+}
+
+// ---------- 엑셀 읽기 공통 ----------
+async function readRows(file) {
+  const buf = await file.arrayBuffer();
+  let wb;
+  if (/\.csv$/i.test(file.name)) {
+    let text;
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+    catch { text = new TextDecoder('euc-kr').decode(buf); }   // 한국어 엑셀에서 저장한 CSV
+    wb = XLSX.read(text.replace(/^﻿/, ''), { type: 'string', raw: true });
+  } else {
+    wb = XLSX.read(buf, { type: 'array' });
+  }
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false })
+    .map(r => r.map(v => String(v ?? '').trim()))
+    .filter(r => r.some(v => v));
+}
+// 첫 줄이 제목줄이면 칸 위치를 찾아서 돌려줌
+function mapColumns(rows, keys) {
+  const head = (rows[0] || []).map(h => h.toLowerCase().replace(/\s/g, ''));
+  const idx = {}; let found = false;
+  for (const [k, words] of Object.entries(keys)) {
+    const i = head.findIndex(h => words.some(w => h.includes(w)));
+    if (i >= 0) { idx[k] = i; found = true; }
+  }
+  if (!found) { Object.keys(keys).forEach((k, i) => idx[k] = i); return { idx, body: rows }; }
+  Object.keys(keys).forEach((k, i) => { if (idx[k] === undefined) idx[k] = -1; });
+  return { idx, body: rows.slice(1) };
+}
+function downloadXlsx(filename, sheets) {
+  const wb = XLSX.utils.book_new();
+  sheets.forEach(([name, rows]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name));
+  XLSX.writeFile(wb, filename);
+}
+
+// ---------- 학생 일괄 등록 ----------
+function downloadStudentTemplate() {
+  downloadXlsx('학생등록_양식.xlsx', [['학생', [['이름','반','비밀번호'], ['홍길동','M2','1234'], ['김영희','M2','0527']]]]);
+}
+let stPending = [];
+$('stFile').onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  try {
+    const rows = await readRows(file);
+    const { idx, body } = mapColumns(rows, { name:['이름','name','학생'], cls:['반','class'], pin:['비밀번호','비번','pin','password'] });
+    stPending = body.map(r => {
+      let pin = idx.pin >= 0 ? (r[idx.pin] || '') : '';
+      if (/^\d{1,3}$/.test(pin)) pin = pin.padStart(4, '0');   // 엑셀이 0을 지운 경우
+      const cls = idx.cls >= 0 ? (r[idx.cls] || '') : '';
+      const name = r[idx.name] || '';
+      const problem = !name ? '이름 없음' : !validPin(pin) ? '비밀번호가 숫자 4자리가 아님' : '';
+      return { name, cls, pin, problem };
+    });
+    const ok = stPending.filter(x => !x.problem);
+    const newCls = [...new Set(ok.map(x => x.cls).filter(c => c && !S.classes.some(k => k.name === c)))];
+    $('stPreview').innerHTML = `
+      <p class="muted">${stPending.length}줄 중 <b>${ok.length}명</b> 등록 가능${newCls.length ? ` · 새로 만들 반: ${newCls.map(esc).join(', ')}` : ''}</p>
+      <div class="scroll"><table><thead><tr><th>이름</th><th>반</th><th>비밀번호</th><th></th></tr></thead><tbody>
+      ${stPending.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.cls) || '<span class="muted">(반 없음)</span>'}</td><td>${x.problem ? esc(x.pin) : '••••'}</td>
+        <td>${x.problem ? `<span class="tag bad">${x.problem}</span>` : '<span class="tag ok">OK</span>'}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="row" style="margin-top:10px"><button class="primary grow" onclick="saveStudents()" ${ok.length ? '' : 'disabled'}>${ok.length}명 등록하기</button>
+      <button onclick="clearStPreview()">취소</button></div>`;
+  } catch (err) { toast('파일을 읽지 못했어요: ' + err.message); }
+};
+function clearStPreview() { stPending = []; $('stPreview').innerHTML = ''; $('stFile').value = ''; }
+async function saveStudents() {
+  const ok = stPending.filter(x => !x.problem); if (!ok.length) return;
+  busy(true);
+  try {
+    const newCls = [...new Set(ok.map(x => x.cls).filter(c => c && !S.classes.some(k => k.name === c)))];
+    if (newCls.length) {
+      const { error } = await sb.from('classes').insert(newCls.map(name => ({ academy_id: academy.id, name })));
+      if (error) throw error;
+    }
+    const { data: cls } = await sb.from('classes').select('id,name');
+    const map = Object.fromEntries((cls || []).map(c => [c.name, c.id]));
+    const { error } = await sb.from('students').insert(ok.map(x => ({ academy_id: academy.id, class_id: map[x.cls] || null, name: x.name, pin_hash: x.pin })));
+    if (error) throw error;
+    toast(`${ok.length}명을 등록했어요`); clearStPreview(); await loadAll();
+  } catch (e) { toast(errText(e)); }
+  finally { busy(false); }
+}
+
+// ============================================================
+// 단어 리스트
+// ============================================================
+function downloadWordTemplate() {
+  downloadXlsx('단어리스트_양식.xlsx', [['단어', [['단어','뜻','예문'], ['apple','사과','I eat an apple every day.'], ['brave','용감한','She was brave in the dark.'], ['cloud','구름','']]]]);
+}
+let lsPending = [];
+const hasWord = (ex, w) => ex && ex.toLowerCase().includes(w.toLowerCase());
+$('lsFile').onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  if (!$('lsTitle').value.trim()) $('lsTitle').value = file.name.replace(/\.(xlsx|xls|csv)$/i, '');
+  try {
+    const rows = await readRows(file);
+    const { idx, body } = mapColumns(rows, { word:['단어','word','영어','영단어'], meaning:['뜻','meaning','의미','한글'], example:['예문','example','sentence','문장'] });
+    lsPending = body.map(r => ({ word: r[idx.word] || '', meaning: r[idx.meaning] || '', example: idx.example >= 0 ? (r[idx.example] || '') : '' }));
+    const ok = lsPending.filter(x => x.word && x.meaning);
+    const blankOk = ok.filter(x => hasWord(x.example, x.word)).length;
+    $('lsPreview').innerHTML = `
+      <p class="muted">${lsPending.length}줄 중 <b>${ok.length}단어</b> 저장 가능 · 빈칸 문제 가능 ${blankOk}단어
+      ${ok.length < 4 ? '<br><span class="wrong">객관식 보기를 만들려면 최소 4단어가 필요해요.</span>' : ''}</p>
+      <div class="scroll"><table><thead><tr><th>단어</th><th>뜻</th><th>예문</th><th></th></tr></thead><tbody>
+      ${lsPending.map(x => {
+        const bad = !x.word || !x.meaning;
+        const note = bad ? '<span class="tag bad">단어·뜻 필요</span>' : x.example && !hasWord(x.example, x.word) ? '<span class="tag warn">예문에 단어 없음</span>' : '<span class="tag ok">OK</span>';
+        return `<tr><td>${esc(x.word)}</td><td>${esc(x.meaning)}</td><td class="muted">${esc(x.example)}</td><td>${note}</td></tr>`;
+      }).join('')}</tbody></table></div>
+      <div class="row" style="margin-top:10px"><button class="primary grow" onclick="saveList()" ${ok.length ? '' : 'disabled'}>${ok.length}단어 저장하기</button>
+      <button onclick="clearLsPreview()">취소</button></div>`;
+  } catch (err) { toast('파일을 읽지 못했어요: ' + err.message); }
+};
+function clearLsPreview() { lsPending = []; $('lsPreview').innerHTML = ''; $('lsFile').value = ''; $('lsTitle').value = ''; }
+async function saveList() {
+  const title = $('lsTitle').value.trim(); if (!title) return toast('리스트 제목을 입력해 주세요');
+  const ok = lsPending.filter(x => x.word && x.meaning); if (!ok.length) return;
+  busy(true);
+  try {
+    const { data: l, error } = await sb.from('word_lists').insert({ academy_id: academy.id, title, created_by: me.id }).select().single();
+    if (error) throw error;
+    const rows = ok.map((x, i) => ({ academy_id: academy.id, list_id: l.id, word: x.word, meaning: x.meaning, example: x.example || null, sort_order: i + 1 }));
+    for (let i = 0; i < rows.length; i += 500) {
+      const { error: e2 } = await sb.from('words').insert(rows.slice(i, i + 500));
+      if (e2) { await sb.from('word_lists').delete().eq('id', l.id); throw e2; }
+    }
+    toast(`"${title}" ${ok.length}단어를 저장했어요`); clearLsPreview(); await loadAll();
+  } catch (e) { toast(errText(e)); }
+  finally { busy(false); }
+}
+function renderLists() {
+  $('listRows').innerHTML = S.lists.length ? S.lists.map(l => `<tr>
+      <td>${esc(l.title)}</td><td>${l.count}</td><td class="muted">${fmtDate(l.created_at)}</td>
+      <td style="text-align:right;white-space:nowrap"><button class="small" onclick="viewList('${l.id}', this)">단어 보기</button>
+      <button class="small danger" onclick="deleteList('${l.id}')">삭제</button></td></tr>
+      <tr id="lv-${l.id}" class="hidden"><td colspan="4" class="detail"></td></tr>`).join('')
+    : '<tr><td colspan="4" class="muted">아직 올린 리스트가 없어요.</td></tr>';
+  const keep = $('tsList').value;
+  $('tsList').innerHTML = '<option value="">리스트 선택</option>' + S.lists.map(l => `<option value="${l.id}" ${l.id === keep ? 'selected' : ''}>${esc(l.title)} (${l.count}단어)</option>`).join('');
+}
+async function viewList(id) {
+  const row = $('lv-' + id);
+  if (!row.classList.contains('hidden')) return row.classList.add('hidden');
+  const { data, error } = await sb.from('words').select('word,meaning,example').eq('list_id', id).order('sort_order');
+  if (error) return toast(errText(error));
+  row.firstElementChild.innerHTML = `<table>${data.map((w, i) => `<tr><td class="muted" style="width:40px">${i + 1}</td><td><b>${esc(w.word)}</b></td><td>${esc(w.meaning)}</td><td class="muted">${esc(w.example)}</td></tr>`).join('')}</table>`;
+  row.classList.remove('hidden');
+}
+async function deleteList(id) {
+  const l = S.lists.find(x => x.id === id);
+  const used = S.tests.filter(t => t.list_id === id);
+  const warn = used.length ? `<br><br><span class="wrong">이 리스트로 만든 시험 ${used.length}개(${used.map(t => esc(t.title)).join(', ')})와 그 <b>응시 결과까지 모두</b> 지워져요.</span>` : '';
+  if (!await confirmBox('리스트 삭제', `<b>${esc(l.title)}</b> 리스트를 삭제할까요?${warn}`, '삭제', true)) return;
+  const { error } = await sb.from('word_lists').delete().eq('id', id);
+  if (error) return toast(errText(error));
+  toast('삭제했어요'); loadAll();
+}
+
+// ============================================================
+// 시험
+// ============================================================
+function classChecks(containerId, selected = []) {
+  $(containerId).innerHTML = S.classes.length
+    ? S.classes.map(c => `<label class="check"><input type="checkbox" value="${c.id}" ${selected.includes(c.id) ? 'checked' : ''}> ${esc(c.name)}</label>`).join('')
+    : '<span class="muted">반을 먼저 만들어 주세요 (반·학생 탭).</span>';
+}
+const checkedIn = el => [...el.querySelectorAll('input:checked')].map(i => i.value);
+$('tsList').onchange = () => {
+  const l = S.lists.find(x => x.id === $('tsList').value);
+  if (l) { $('tsCount').max = l.count; $('tsCount').value = Math.min(20, l.count); if (!$('tsTitle').value.trim()) $('tsTitle').value = l.title + ' 단어시험'; }
+};
+function renderTests() {
+  const keep = checkedIn($('tsClasses')); classChecks('tsClasses', keep);
+  $('testRows').innerHTML = S.tests.length ? S.tests.map(t => {
+    const l = S.lists.find(x => x.id === t.list_id);
+    return `<tr>
+      <td>${esc(t.title)}</td><td class="muted">${esc(l ? l.title : '')}</td><td>${t.question_count}</td>
+      <td>${t.classIds.map(id => `<span class="tag">${esc(className(id))}</span>`).join(' ') || '<span class="muted">없음</span>'}</td>
+      <td>${t.attemptCount}회</td>
+      <td>${t.active ? '<span class="tag ok">진행 중</span>' : '<span class="tag">종료</span>'}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="small" onclick="editTestClasses('${t.id}')">반 수정</button>
+        <button class="small" onclick="toggleTest('${t.id}')">${t.active ? '종료하기' : '다시 열기'}</button>
+        <button class="small danger" onclick="deleteTest('${t.id}')">삭제</button></td></tr>`;
+  }).join('') : '<tr><td colspan="7" class="muted">아직 만든 시험이 없어요.</td></tr>';
+}
+async function addTest() {
+  const title = $('tsTitle').value.trim(), list_id = $('tsList').value, n = parseInt($('tsCount').value, 10);
+  const classIds = checkedIn($('tsClasses'));
+  const l = S.lists.find(x => x.id === list_id);
+  if (!title) return toast('시험 제목을 입력해 주세요');
+  if (!l) return toast('단어 리스트를 골라 주세요');
+  if (l.count < 4) return toast('객관식 보기 때문에 리스트에 단어가 4개 이상 있어야 해요');
+  if (!n || n < 1 || n > l.count) return toast(`문항 수는 1~${l.count} 사이로 정해 주세요`);
+  if (!classIds.length) return toast('대상 반을 하나 이상 골라 주세요');
+  const { data: t, error } = await sb.from('tests').insert({ academy_id: academy.id, list_id, title, question_count: n, created_by: me.id }).select().single();
+  if (error) return toast(errText(error));
+  const { error: e2 } = await sb.from('test_classes').insert(classIds.map(class_id => ({ academy_id: academy.id, test_id: t.id, class_id })));
+  if (e2) return toast(errText(e2));
+  $('tsTitle').value = ''; $('tsList').value = ''; $('tsCount').value = '';
+  $('tsClasses').querySelectorAll('input').forEach(i => i.checked = false);
+  toast('시험을 만들었어요. 학생 화면에 바로 보여요'); loadAll();
+}
+async function editTestClasses(id) {
+  const t = S.tests.find(x => x.id === id);
+  const p = modal('대상 반 수정', '<div class="pill-list" id="mChecks"></div>', [{text:'취소', value:null}, {text:'저장', cls:'primary', value:() => checkedIn($('mChecks'))}]);
+  classChecks('mChecks', t.classIds);   // 모달이 열린 뒤 체크박스 채우기
+  const v = await p;
+  if (v === null) return;
+  await sb.from('test_classes').delete().eq('test_id', id);
+  if (v.length) {
+    const { error } = await sb.from('test_classes').insert(v.map(class_id => ({ academy_id: academy.id, test_id: id, class_id })));
+    if (error) return toast(errText(error));
+  }
+  toast('대상 반을 바꿨어요'); loadAll();
+}
+async function toggleTest(id) {
+  const t = S.tests.find(x => x.id === id);
+  const { error } = await sb.from('tests').update({ active: !t.active }).eq('id', id);
+  if (error) return toast(errText(error));
+  toast(t.active ? '시험을 종료했어요. 학생 화면에서 사라져요' : '시험을 다시 열었어요'); loadAll();
+}
+async function deleteTest(id) {
+  const t = S.tests.find(x => x.id === id);
+  if (!await confirmBox('시험 삭제', `<b>${esc(t.title)}</b> 시험을 삭제할까요?<br><span class="wrong">응시 결과 ${t.attemptCount}건도 함께 지워져요.</span> 결과를 남기려면 "종료하기"를 쓰세요.`, '삭제', true)) return;
+  const { error } = await sb.from('tests').delete().eq('id', id);
+  if (error) return toast(errText(error));
+  toast('삭제했어요'); loadAll();
+}
+
+// ============================================================
+// 결과
+// ============================================================
+function renderResultFilters() {
+  const keepT = $('rsTest').value, keepC = $('rsClass').value;
+  $('rsTest').innerHTML = S.tests.length
+    ? S.tests.map(t => `<option value="${t.id}" ${t.id === keepT ? 'selected' : ''}>${esc(t.title)}${t.active ? '' : ' (종료)'}</option>`).join('')
+    : '<option value="">시험이 없어요</option>';
+  $('rsClass').innerHTML = classOptions(keepC, true);
+}
+$('rsTest').onchange = loadResults; $('rsClass').onchange = () => renderResults();
+
+async function loadResults() {
+  const tid = $('rsTest').value;
+  if (!tid) { $('resultRows').innerHTML = ''; $('rsSummary').textContent = ''; return; }
+  const { data, error } = await sb.from('attempts').select('id,student_id,score,total,started_at,finished_at').eq('test_id', tid).order('finished_at');
+  if (error) return toast(errText(error));
+  resultCache = { tid, attempts: data || [] };
+  renderResults();
+}
+function summarize() {
+  const t = S.tests.find(x => x.id === resultCache.tid); if (!t) return [];
+  const cf = $('rsClass').value;
+  const byStu = {};
+  resultCache.attempts.forEach(a => (byStu[a.student_id] = byStu[a.student_id] || []).push(a));
+  // 배정된 반의 재원생 + 실제 응시한 학생
+  const ids = new Set([...S.students.filter(s => s.active && t.classIds.includes(s.class_id)).map(s => s.id), ...Object.keys(byStu)]);
+  return [...ids].map(id => {
+    const s = S.students.find(x => x.id === id) || { name: '(삭제된 학생)', class_id: null };
+    const at = byStu[id] || [];
+    const best = at.slice().sort((a, b) => b.score / b.total - a.score / a.total || new Date(a.finished_at) - new Date(b.finished_at))[0];
+    return { id, name: s.name, class_id: s.class_id, cls: className(s.class_id), attempts: at, first: at[0], best, last: at[at.length - 1] };
+  }).filter(r => !cf || r.class_id === cf)
+    .sort((a, b) => a.cls.localeCompare(b.cls, 'ko') || a.name.localeCompare(b.name, 'ko'));
+}
+const scoreCell = a => a ? `${a.score}/${a.total} <span class="muted">(${pct(a.score, a.total)}점)</span>` : '<span class="muted">-</span>';
+function renderResults() {
+  if (!resultCache) return;
+  const rows = summarize();
+  const done = rows.filter(r => r.attempts.length);
+  const avg = done.length ? Math.round(done.reduce((s, r) => s + pct(r.first.score, r.first.total), 0) / done.length) : 0;
+  $('rsSummary').textContent = rows.length ? `대상 ${rows.length}명 · 응시 ${done.length}명 · 미응시 ${rows.length - done.length}명 · 첫 점수 평균 ${avg}점` : '대상 학생이 없어요.';
+  $('resultRows').innerHTML = rows.map(r => `
+    <tr class="${r.attempts.length ? 'click' : ''}" ${r.attempts.length ? `onclick="toggleStu('${r.id}')"` : ''}>
+      <td>${esc(r.cls)}</td><td>${esc(r.name)}</td>
+      <td>${r.attempts.length ? r.attempts.length + '회' : '<span class="tag warn">미응시</span>'}</td>
+      <td>${scoreCell(r.first)}</td><td>${scoreCell(r.best)}</td><td class="muted">${fmtDT(r.last?.finished_at)}</td></tr>
+    <tr id="rs-${r.id}" class="hidden"><td colspan="6" class="detail"></td></tr>`).join('');
+}
+function dur(a) {
+  if (!a.started_at) return '';
+  const s = Math.max(0, Math.round((new Date(a.finished_at) - new Date(a.started_at)) / 1000));
+  return `${Math.floor(s / 60)}분 ${s % 60}초`;
+}
+function toggleStu(id) {
+  const row = $('rs-' + id);
+  if (!row.classList.contains('hidden')) return row.classList.add('hidden');
+  const at = resultCache.attempts.filter(a => a.student_id === id);
+  row.firstElementChild.innerHTML = `<table>${at.map((a, i) => `
+      <tr class="click" onclick="event.stopPropagation(); showAnswers('${a.id}')"><td style="width:60px">${i + 1}회차</td><td>${fmtDT(a.finished_at)}</td>
+      <td>${scoreCell(a)}</td><td class="muted">${dur(a)}</td><td class="muted" style="text-align:right">오답 보기 ›</td></tr>
+      <tr id="an-${a.id}" class="hidden"><td colspan="5"></td></tr>`).join('')}</table>`;
+  row.classList.remove('hidden');
+}
+async function showAnswers(aid) {
+  const row = $('an-' + aid);
+  if (!row.classList.contains('hidden')) return row.classList.add('hidden');
+  const { data, error } = await sb.from('attempt_answers').select('*').eq('attempt_id', aid).order('question_no');
+  if (error) return toast(errText(error));
+  const wrong = data.filter(x => !x.is_correct);
+  row.firstElementChild.innerHTML = wrong.length ? `<table>
+      <thead><tr><th>번호</th><th>형식</th><th>정답</th><th>학생 답</th></tr></thead>
+      ${wrong.map(x => `<tr><td>${x.question_no}</td><td class="muted">${TYPE[x.question_type] || x.question_type}</td>
+        <td class="right">${esc(x.correct_answer)}</td><td class="wrong">${x.student_answer ? esc(x.student_answer) : '(시간 초과)'}</td></tr>`).join('')}</table>`
+    : '<span class="right">모두 맞혔어요!</span>';
+  row.classList.remove('hidden');
+}
+async function downloadResults() {
+  if (!resultCache) return toast('시험을 먼저 골라 주세요');
+  const t = S.tests.find(x => x.id === resultCache.tid);
+  const rows = summarize();
+  const sheet1 = [['반','이름','응시 횟수','첫 점수','첫 점수(100점)','최고 점수','최고 점수(100점)','최근 응시']]
+    .concat(rows.map(r => [r.cls, r.name, r.attempts.length,
+      r.first ? `${r.first.score}/${r.first.total}` : '', r.first ? pct(r.first.score, r.first.total) : '',
+      r.best ? `${r.best.score}/${r.best.total}` : '', r.best ? pct(r.best.score, r.best.total) : '',
+      r.last ? fmtDT(r.last.finished_at) : '미응시']));
+  const sheet2 = [['반','이름','회차','응시 일시','맞힌 개수','문항 수','점수(100점)','걸린 시간']];
+  rows.forEach(r => r.attempts.forEach((a, i) => sheet2.push([r.cls, r.name, i + 1, fmtDT(a.finished_at), a.score, a.total, pct(a.score, a.total), dur(a)])));
+  downloadXlsx(`${t.title}_결과.xlsx`.replace(/[\\/:*?"<>|]/g, '_'), [['학생별 요약', sheet1], ['전체 응시 기록', sheet2]]);
+}
+
+// ============================================================
+// 선생님 관리 (원장)
+// ============================================================
+function renderTeachers() {
+  if (me?.role !== 'owner') return;
+  const st = { pending: '<span class="tag warn">승인 대기</span>', approved: '<span class="tag ok">승인</span>', rejected: '<span class="tag bad">거절</span>' };
+  const order = { pending: 0, approved: 1, rejected: 2 };
+  $('teacherRows').innerHTML = S.teachers.slice().sort((a, b) => order[a.status] - order[b.status]).map(t => {
+    const self = t.id === me.id;
+    const btns = self ? '<span class="muted">본인</span>'
+      : t.status === 'pending' ? `<button class="small primary" onclick="setTeacher('${t.id}','approved')">승인</button> <button class="small danger" onclick="setTeacher('${t.id}','rejected')">거절</button>`
+      : t.status === 'approved' ? `<button class="small danger" onclick="setTeacher('${t.id}','rejected')">사용 중지</button>`
+      : `<button class="small" onclick="setTeacher('${t.id}','approved')">다시 승인</button> <button class="small danger" onclick="removeTeacher('${t.id}')">목록에서 삭제</button>`;
+    return `<tr><td>${esc(t.name)}</td><td class="muted">${esc(t.email)}</td><td>${t.role === 'owner' ? '원장' : '선생님'}</td>
+      <td>${st[t.status]}</td><td class="muted">${fmtDate(t.created_at)}</td><td style="text-align:right;white-space:nowrap">${btns}</td></tr>`;
+  }).join('');
+  const n = S.teachers.filter(t => t.status === 'pending').length;
+  $('tabTeachers').textContent = n ? `선생님 관리 (${n})` : '선생님 관리';
+}
+async function setTeacher(id, status) {
+  const { error } = await sb.rpc('set_teacher_status', { p_teacher_id: id, p_status: status });
+  if (error) return toast(errText(error));
+  toast(status === 'approved' ? '승인했어요' : '처리했어요'); loadAll();
+}
+async function removeTeacher(id) {
+  if (!await confirmBox('선생님 삭제', '목록에서 삭제할까요? 그 계정은 다시 합류 신청을 할 수 있어요.', '삭제', true)) return;
+  const { error } = await sb.rpc('remove_teacher', { p_teacher_id: id });
+  if (error) return toast(errText(error));
+  loadAll();
+}
+function copyCode() {
+  navigator.clipboard.writeText(academy.code).then(() => toast('학원 코드를 복사했어요'), () => toast(academy.code));
+}
+
+// ============================================================
+// 시작
+// ============================================================
+if (!SUPABASE_KEY || SUPABASE_KEY.includes('붙여넣기')) {
+  show('authView');
+  msg('authMsg', 'config.js 파일에 Publishable key를 아직 넣지 않았어요.');
+} else {
+  loadMe();
+}
+</script>
+</body>
+</html>
