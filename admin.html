@@ -227,7 +227,7 @@
           <button class="primary" onclick="downloadResults()">엑셀 내려받기</button>
         </div>
         <p class="muted" id="rsSummary"></p>
-        <table><thead><tr><th>반</th><th>이름</th><th>응시 횟수</th><th>첫 점수</th><th>최고 점수</th><th>최근 응시</th></tr></thead><tbody id="resultRows"></tbody></table>
+        <table><thead><tr><th>반</th><th>이름</th><th>회차별 점수</th><th>최고 점수</th><th>최근 응시</th></tr></thead><tbody id="resultRows"></tbody></table>
       </div>
     </section>
 
@@ -810,9 +810,9 @@ function renderResults() {
   $('resultRows').innerHTML = rows.map(r => `
     <tr class="${r.attempts.length ? 'click' : ''}" ${r.attempts.length ? `onclick="toggleStu('${r.id}')"` : ''}>
       <td>${esc(r.cls)}</td><td>${esc(r.name)}</td>
-      <td>${r.attempts.length ? r.attempts.length + '회' : '<span class="tag warn">미응시</span>'}</td>
-      <td>${scoreCell(r.first)}</td><td>${scoreCell(r.best)}</td><td class="muted">${fmtDT(r.last?.finished_at)}</td></tr>
-    <tr id="rs-${r.id}" class="hidden"><td colspan="6" class="detail"></td></tr>`).join('');
+      <td style="word-break:keep-all">${r.attempts.length ? r.attempts.map(a => `<b>${pct(a.score, a.total)}</b>`).join(' → ') + ` <span class="muted">(${r.attempts.length}회)</span>` : '<span class="tag warn">미응시</span>'}</td>
+      <td>${r.best ? `${pct(r.best.score, r.best.total)}점` : '<span class="muted">-</span>'}</td><td class="muted">${fmtDT(r.last?.finished_at)}</td></tr>
+    <tr id="rs-${r.id}" class="hidden"><td colspan="5" class="detail"></td></tr>`).join('');
 }
 function dur(a) {
   if (!a.started_at) return '';
@@ -846,8 +846,8 @@ async function downloadResults() {
   if (!resultCache) return toast('시험을 먼저 골라 주세요');
   const t = S.tests.find(x => x.id === resultCache.tid);
   const rows = summarize();
-  const sheet1 = [['반','이름','응시 횟수','첫 점수','첫 점수(100점)','최고 점수','최고 점수(100점)','최근 응시']]
-    .concat(rows.map(r => [r.cls, r.name, r.attempts.length,
+  const sheet1 = [['반','이름','응시 횟수','회차별 점수(100점)','첫 점수','첫 점수(100점)','최고 점수','최고 점수(100점)','최근 응시']]
+    .concat(rows.map(r => [r.cls, r.name, r.attempts.length, r.attempts.map(a => pct(a.score, a.total)).join(' → '),
       r.first ? `${r.first.score}/${r.first.total}` : '', r.first ? pct(r.first.score, r.first.total) : '',
       r.best ? `${r.best.score}/${r.best.total}` : '', r.best ? pct(r.best.score, r.best.total) : '',
       r.last ? fmtDT(r.last.finished_at) : '미응시']));
