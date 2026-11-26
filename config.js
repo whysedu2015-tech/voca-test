@@ -4,4 +4,4 @@
 // Secret key / service_role 키는 절대 넣지 마세요.
 // ============================================================
 const SUPABASE_URL = 'https://qeqnxdaxlfpaxyknyuqi.supabase.co';
-const SUPABASE_KEY = '여기에_Publishable_key_붙여넣기';
+const SUPABASE_KEY = 'sb_publishable_NirZO8HFIy7NaHb303OCWw_HxZHyYNm';
