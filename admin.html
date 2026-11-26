@@ -184,7 +184,7 @@
     <section id="tab-lists" class="hidden">
       <div class="card">
         <h3>단어 리스트 올리기</h3>
-        <p class="muted" style="margin-top:0">엑셀·CSV 칸: 단어 / 뜻 / 예문(선택). 예문 안에 그 단어가 들어 있으면 빈칸 문제로도 나와요.</p>
+        <p class="muted" style="margin-top:0">엑셀·CSV 칸: 단어 / 뜻 / 예문(선택) / 영영뜻(선택). 예문 안에 그 단어가 들어 있으면 빈칸 문제로, 영영뜻이 있으면 영영뜻 문제로도 나와요.</p>
         <div class="row">
           <input id="lsTitle" class="grow" placeholder="리스트 제목 (예: M2 Unit 3)">
           <input type="file" id="lsFile" accept=".xlsx,.xls,.csv">
@@ -265,7 +265,8 @@ const fmtDate = d => d ? new Date(d).toLocaleDateString('ko-KR', {year:'2-digit'
 const fmtDT = d => d ? new Date(d).toLocaleString('ko-KR', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) : '';
 const className = id => (S.classes.find(c => c.id === id) || {}).name || '(반 없음)';
 const pct = (s, t) => t ? Math.round(s / t * 100) : 0;
-const TYPE = { en2ko_mc:'영→뜻 객관식', ko2en_mc:'뜻→영 객관식', spelling:'철자 쓰기', dictation:'받아쓰기', blank:'예문 빈칸' };
+const TYPE = { en2ko_mc:'영→뜻 객관식', ko2en_mc:'뜻→영 객관식', spelling:'철자 쓰기', dictation:'받아쓰기', blank:'예문 빈칸',
+               def2en_mc:'영영뜻→단어 객관식', def_spelling:'영영뜻→철자 쓰기', en2def_mc:'단어→영영뜻 객관식' };
 
 function show(view) {
   ['authView','setupView','waitView','mainView'].forEach(v => $(v).classList.toggle('hidden', v !== view));
@@ -534,14 +535,19 @@ async function readRows(file) {
     .filter(r => r.some(v => v));
 }
 // 첫 줄이 제목줄이면 칸 위치를 찾아서 돌려줌
-function mapColumns(rows, keys) {
+// defaultOrder: 제목줄이 없을 때 A, B, C… 칸에 순서대로 대응할 항목
+function mapColumns(rows, keys, defaultOrder = Object.keys(keys)) {
   const head = (rows[0] || []).map(h => h.toLowerCase().replace(/\s/g, ''));
-  const idx = {}; let found = false;
-  for (const [k, words] of Object.entries(keys)) {
-    const i = head.findIndex(h => words.some(w => h.includes(w)));
-    if (i >= 0) { idx[k] = i; found = true; }
+  const idx = {}, used = new Set(); let found = false;
+  // 1차: 제목이 정확히 같은 칸 → 2차: 제목에 키워드가 들어간 칸 (이미 쓴 칸은 제외)
+  for (const exact of [true, false]) {
+    for (const [k, words] of Object.entries(keys)) {
+      if (idx[k] !== undefined) continue;
+      const i = head.findIndex((h, j) => !used.has(j) && words.some(w => exact ? h === w : h.includes(w)));
+      if (i >= 0) { idx[k] = i; used.add(i); found = true; }
+    }
   }
-  if (!found) { Object.keys(keys).forEach((k, i) => idx[k] = i); return { idx, body: rows }; }
+  if (!found) { defaultOrder.forEach((k, i) => idx[k] = i); return { idx, body: rows }; }
   Object.keys(keys).forEach((k, i) => { if (idx[k] === undefined) idx[k] = -1; });
   return { idx, body: rows.slice(1) };
 }
@@ -604,7 +610,12 @@ async function saveStudents() {
 // 단어 리스트
 // ============================================================
 function downloadWordTemplate() {
-  downloadXlsx('단어리스트_양식.xlsx', [['단어', [['단어','뜻','예문'], ['apple','사과','I eat an apple every day.'], ['brave','용감한','She was brave in the dark.'], ['cloud','구름','']]]]);
+  downloadXlsx('단어리스트_양식.xlsx', [['단어', [
+    ['단어','뜻','예문','영영뜻'],
+    ['apple','사과','I eat an apple every day.','a round fruit with red or green skin'],
+    ['brave','용감한','She was brave in the dark.','feeling or showing no fear'],
+    ['cloud','구름','','a white or gray mass floating in the sky'],
+    ['library','도서관','I borrow books from the library.','']]]]);
 }
 let lsPending = [];
 const hasWord = (ex, w) => ex && ex.toLowerCase().includes(w.toLowerCase());
@@ -613,18 +624,25 @@ $('lsFile').onchange = async e => {
   if (!$('lsTitle').value.trim()) $('lsTitle').value = file.name.replace(/\.(xlsx|xls|csv)$/i, '');
   try {
     const rows = await readRows(file);
-    const { idx, body } = mapColumns(rows, { word:['단어','word','영어','영단어'], meaning:['뜻','meaning','의미','한글'], example:['예문','example','sentence','문장'] });
-    lsPending = body.map(r => ({ word: r[idx.word] || '', meaning: r[idx.meaning] || '', example: idx.example >= 0 ? (r[idx.example] || '') : '' }));
+    // 영영뜻을 먼저 찾아야 '뜻' 칸과 헷갈리지 않음
+    const { idx, body } = mapColumns(rows, {
+      definition:['영영뜻','영영','영영풀이','definition','englishdefinition'],
+      word:['단어','word','영어','영단어'], meaning:['뜻','meaning','의미','한글','한글뜻'], example:['예문','example','sentence','문장'] },
+      ['word','meaning','example','definition']);
+    const cell = (r, k) => idx[k] >= 0 ? (r[idx[k]] || '') : '';
+    lsPending = body.map(r => ({ word: cell(r,'word'), meaning: cell(r,'meaning'), example: cell(r,'example'), definition: cell(r,'definition') }));
     const ok = lsPending.filter(x => x.word && x.meaning);
     const blankOk = ok.filter(x => hasWord(x.example, x.word)).length;
+    const defOk = ok.filter(x => x.definition).length;
     $('lsPreview').innerHTML = `
-      <p class="muted">${lsPending.length}줄 중 <b>${ok.length}단어</b> 저장 가능 · 빈칸 문제 가능 ${blankOk}단어
-      ${ok.length < 4 ? '<br><span class="wrong">객관식 보기를 만들려면 최소 4단어가 필요해요.</span>' : ''}</p>
-      <div class="scroll"><table><thead><tr><th>단어</th><th>뜻</th><th>예문</th><th></th></tr></thead><tbody>
+      <p class="muted">${lsPending.length}줄 중 <b>${ok.length}단어</b> 저장 가능 · 빈칸 문제 가능 ${blankOk}단어 · 영영뜻 문제 가능 ${defOk}단어
+      ${ok.length < 4 ? '<br><span class="wrong">객관식 보기를 만들려면 최소 4단어가 필요해요.</span>' : ''}
+      ${defOk > 0 && defOk < 4 ? '<br><span class="muted">영영뜻 객관식은 영영뜻이 있는 단어가 4개 이상일 때만 나와요. (영영뜻 철자 쓰기는 가능)</span>' : ''}</p>
+      <div class="scroll"><table><thead><tr><th>단어</th><th>뜻</th><th>예문</th><th>영영뜻</th><th></th></tr></thead><tbody>
       ${lsPending.map(x => {
         const bad = !x.word || !x.meaning;
         const note = bad ? '<span class="tag bad">단어·뜻 필요</span>' : x.example && !hasWord(x.example, x.word) ? '<span class="tag warn">예문에 단어 없음</span>' : '<span class="tag ok">OK</span>';
-        return `<tr><td>${esc(x.word)}</td><td>${esc(x.meaning)}</td><td class="muted">${esc(x.example)}</td><td>${note}</td></tr>`;
+        return `<tr><td>${esc(x.word)}</td><td>${esc(x.meaning)}</td><td class="muted">${esc(x.example)}</td><td class="muted">${esc(x.definition)}</td><td>${note}</td></tr>`;
       }).join('')}</tbody></table></div>
       <div class="row" style="margin-top:10px"><button class="primary grow" onclick="saveList()" ${ok.length ? '' : 'disabled'}>${ok.length}단어 저장하기</button>
       <button onclick="clearLsPreview()">취소</button></div>`;
@@ -638,7 +656,7 @@ async function saveList() {
   try {
     const { data: l, error } = await sb.from('word_lists').insert({ academy_id: academy.id, title, created_by: me.id }).select().single();
     if (error) throw error;
-    const rows = ok.map((x, i) => ({ academy_id: academy.id, list_id: l.id, word: x.word, meaning: x.meaning, example: x.example || null, sort_order: i + 1 }));
+    const rows = ok.map((x, i) => ({ academy_id: academy.id, list_id: l.id, word: x.word, meaning: x.meaning, example: x.example || null, definition: x.definition || null, sort_order: i + 1 }));
     for (let i = 0; i < rows.length; i += 500) {
       const { error: e2 } = await sb.from('words').insert(rows.slice(i, i + 500));
       if (e2) { await sb.from('word_lists').delete().eq('id', l.id); throw e2; }
@@ -660,9 +678,9 @@ function renderLists() {
 async function viewList(id) {
   const row = $('lv-' + id);
   if (!row.classList.contains('hidden')) return row.classList.add('hidden');
-  const { data, error } = await sb.from('words').select('word,meaning,example').eq('list_id', id).order('sort_order');
+  const { data, error } = await sb.from('words').select('word,meaning,example,definition').eq('list_id', id).order('sort_order');
   if (error) return toast(errText(error));
-  row.firstElementChild.innerHTML = `<table>${data.map((w, i) => `<tr><td class="muted" style="width:40px">${i + 1}</td><td><b>${esc(w.word)}</b></td><td>${esc(w.meaning)}</td><td class="muted">${esc(w.example)}</td></tr>`).join('')}</table>`;
+  row.firstElementChild.innerHTML = `<table><thead><tr><th></th><th>단어</th><th>뜻</th><th>예문</th><th>영영뜻</th></tr></thead>${data.map((w, i) => `<tr><td class="muted" style="width:40px">${i + 1}</td><td><b>${esc(w.word)}</b></td><td>${esc(w.meaning)}</td><td class="muted">${esc(w.example)}</td><td class="muted">${esc(w.definition)}</td></tr>`).join('')}</table>`;
   row.classList.remove('hidden');
 }
 async function deleteList(id) {
