@@ -167,8 +167,8 @@
 // ==== QUIZ-CORE START ====  (문제 만들기·채점 — 화면과 상관없는 부분)
 const RATIO = { en2ko_mc: .20, ko2en_mc: .20, spelling: .20, dictation: .15, blank: .15, def: .10 };
 const DEF_TYPES = ['def2en_mc', 'def_spelling', 'en2def_mc'];
-const SECONDS = { def2en_mc: 25, def_spelling: 25, en2def_mc: 30 };   // 나머지는 15초
-const secondsFor = type => SECONDS[type] || 15;
+const SECONDS = { def2en_mc: 25, def_spelling: 25, en2def_mc: 30 };   // 나머지는 20초
+const secondsFor = type => SECONDS[type] || 20;
 
 function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 const norm = s => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
