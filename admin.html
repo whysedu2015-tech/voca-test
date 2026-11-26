@@ -209,11 +209,14 @@
         </div>
         <label>대상 반 (여러 개 선택 가능)</label>
         <div class="pill-list" id="tsClasses"></div>
+        <label>문제 형식 (고른 형식만 나와요) <button class="small" style="margin-left:6px" onclick="toggleAllTypes()">전체 선택 / 해제</button></label>
+        <div class="pill-list" id="tsTypes"></div>
+        <div id="tsHint" class="muted" style="margin-top:8px;line-height:1.6"></div>
         <div style="margin-top:16px"><button class="primary" onclick="addTest()">시험 만들기</button></div>
       </div>
       <div class="card">
         <h3>시험 목록</h3>
-        <table><thead><tr><th>제목</th><th>리스트</th><th>문항</th><th>대상 반</th><th>응시</th><th>상태</th><th></th></tr></thead><tbody id="testRows"></tbody></table>
+        <table><thead><tr><th>제목</th><th>리스트</th><th>문항</th><th>형식</th><th>대상 반</th><th>응시</th><th>상태</th><th></th></tr></thead><tbody id="testRows"></tbody></table>
       </div>
     </section>
 
@@ -618,7 +621,9 @@ function downloadWordTemplate() {
     ['library','도서관','I borrow books from the library.','']]]]);
 }
 let lsPending = [];
-const hasWord = (ex, w) => ex && ex.toLowerCase().includes(w.toLowerCase());
+// 예문 빈칸 판정 — 학생 페이지와 같은 기준 (단어가 형태 그대로 들어 있어야 함)
+const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const hasWord = (ex, w) => !!(ex && new RegExp('(^|[^A-Za-z])' + escRe(w) + '(?=$|[^A-Za-z])', 'i').test(ex));
 $('lsFile').onchange = async e => {
   const file = e.target.files[0]; if (!file) return;
   if (!$('lsTitle').value.trim()) $('lsTitle').value = file.name.replace(/\.(xlsx|xls|csv)$/i, '');
@@ -641,7 +646,7 @@ $('lsFile').onchange = async e => {
       <div class="scroll"><table><thead><tr><th>단어</th><th>뜻</th><th>예문</th><th>영영뜻</th><th></th></tr></thead><tbody>
       ${lsPending.map(x => {
         const bad = !x.word || !x.meaning;
-        const note = bad ? '<span class="tag bad">단어·뜻 필요</span>' : x.example && !hasWord(x.example, x.word) ? '<span class="tag warn">예문에 단어 없음</span>' : '<span class="tag ok">OK</span>';
+        const note = bad ? '<span class="tag bad">단어·뜻 필요</span>' : x.example && !hasWord(x.example, x.word) ? '<span class="tag warn">예문에 단어가 그대로 없음 → 빈칸 제외</span>' : '<span class="tag ok">OK</span>';
         return `<tr><td>${esc(x.word)}</td><td>${esc(x.meaning)}</td><td class="muted">${esc(x.example)}</td><td class="muted">${esc(x.definition)}</td><td>${note}</td></tr>`;
       }).join('')}</tbody></table></div>
       <div class="row" style="margin-top:10px"><button class="primary grow" onclick="saveList()" ${ok.length ? '' : 'disabled'}>${ok.length}단어 저장하기</button>
@@ -702,16 +707,53 @@ function classChecks(containerId, selected = []) {
     : '<span class="muted">반을 먼저 만들어 주세요 (반·학생 탭).</span>';
 }
 const checkedIn = el => [...el.querySelectorAll('input:checked')].map(i => i.value);
+const TYPE_ORDER = ['en2ko_mc','ko2en_mc','spelling','dictation','blank','def2en_mc','def_spelling','en2def_mc'];
+const TYPE_SHORT = { en2ko_mc:'영→뜻', ko2en_mc:'뜻→영', spelling:'철자', dictation:'받아쓰기', blank:'빈칸', def2en_mc:'영영→단어', def_spelling:'영영→철자', en2def_mc:'단어→영영' };
+function renderTypeChecks() {
+  $('tsTypes').innerHTML = TYPE_ORDER.map(t => `<label class="check"><input type="checkbox" value="${t}" checked onchange="updateTypeHint()"> ${TYPE[t]}</label>`).join('');
+}
+function toggleAllTypes() {
+  const boxes = [...$('tsTypes').querySelectorAll('input')];
+  const on = !boxes.every(b => b.checked);
+  boxes.forEach(b => b.checked = on); updateTypeHint();
+}
+let tsInfo = null;   // 고른 리스트의 빈칸·영영뜻 가능 단어 수
+async function loadListInfo(listId) {
+  tsInfo = null; updateTypeHint();
+  if (!listId) return;
+  const { data } = await sb.from('words').select('word,example,definition').eq('list_id', listId);
+  if ($('tsList').value !== listId || !data) return;
+  tsInfo = { total: data.length, blank: data.filter(w => hasWord(w.example, w.word)).length, def: data.filter(w => w.definition).length };
+  updateTypeHint();
+}
+function updateTypeHint() {
+  const sel = checkedIn($('tsTypes'));
+  const msgs = [];
+  if (!sel.length) msgs.push('<span class="wrong">문제 형식을 하나 이상 골라 주세요.</span>');
+  if (tsInfo) {
+    msgs.push(`이 리스트: 단어 ${tsInfo.total}개 · 예문 빈칸 가능 ${tsInfo.blank}개 · 영영뜻 있는 단어 ${tsInfo.def}개`);
+    const defSel = sel.filter(t => t.startsWith('def') || t === 'en2def_mc');
+    if (sel.includes('blank') && tsInfo.blank === 0) msgs.push('· 예문 빈칸이 가능한 단어가 없어서 빈칸 문제는 나오지 않아요.');
+    if (defSel.length && tsInfo.def === 0) msgs.push('· 영영뜻이 없어서 영영뜻 문제는 나오지 않아요.');
+    if (sel.includes('en2def_mc') && tsInfo.def > 0 && tsInfo.def < 4) msgs.push('· 영영뜻이 4개 미만이라 "단어→영영뜻 객관식"은 나오지 않아요.');
+    if (sel.length && !sel.some(t => ['en2ko_mc','ko2en_mc','spelling'].includes(t)))
+      msgs.push('· 고른 형식에 맞는 단어가 부족하면, 남는 문항은 "뜻→영 객관식"으로 나와요. (받아쓰기는 소리가 안 나는 브라우저에서 철자 쓰기로 나와요)');
+  }
+  $('tsHint').innerHTML = msgs.join('<br>');
+}
 $('tsList').onchange = () => {
   const l = S.lists.find(x => x.id === $('tsList').value);
   if (l) { $('tsCount').max = l.count; $('tsCount').value = Math.min(20, l.count); if (!$('tsTitle').value.trim()) $('tsTitle').value = l.title + ' 단어시험'; }
+  loadListInfo($('tsList').value);
 };
+renderTypeChecks();
 function renderTests() {
   const keep = checkedIn($('tsClasses')); classChecks('tsClasses', keep);
   $('testRows').innerHTML = S.tests.length ? S.tests.map(t => {
     const l = S.lists.find(x => x.id === t.list_id);
     return `<tr>
       <td>${esc(t.title)}</td><td class="muted">${esc(l ? l.title : '')}</td><td>${t.question_count}</td>
+      <td class="muted" style="font-size:13px">${t.question_types && t.question_types.length < TYPE_ORDER.length ? t.question_types.map(x => TYPE_SHORT[x] || x).join(', ') : '전체'}</td>
       <td>${t.classIds.map(id => `<span class="tag">${esc(className(id))}</span>`).join(' ') || '<span class="muted">없음</span>'}</td>
       <td>${t.attemptCount}회</td>
       <td>${t.active ? '<span class="tag ok">진행 중</span>' : '<span class="tag">종료</span>'}</td>
@@ -719,7 +761,7 @@ function renderTests() {
         <button class="small" onclick="editTestClasses('${t.id}')">반 수정</button>
         <button class="small" onclick="toggleTest('${t.id}')">${t.active ? '종료하기' : '다시 열기'}</button>
         <button class="small danger" onclick="deleteTest('${t.id}')">삭제</button></td></tr>`;
-  }).join('') : '<tr><td colspan="7" class="muted">아직 만든 시험이 없어요.</td></tr>';
+  }).join('') : '<tr><td colspan="8" class="muted">아직 만든 시험이 없어요.</td></tr>';
 }
 async function addTest() {
   const title = $('tsTitle').value.trim(), list_id = $('tsList').value, n = parseInt($('tsCount').value, 10);
@@ -730,12 +772,16 @@ async function addTest() {
   if (l.count < 4) return toast('객관식 보기 때문에 리스트에 단어가 4개 이상 있어야 해요');
   if (!n || n < 1 || n > l.count) return toast(`문항 수는 1~${l.count} 사이로 정해 주세요`);
   if (!classIds.length) return toast('대상 반을 하나 이상 골라 주세요');
-  const { data: t, error } = await sb.from('tests').insert({ academy_id: academy.id, list_id, title, question_count: n, created_by: me.id }).select().single();
+  const types = checkedIn($('tsTypes'));
+  if (!types.length) return toast('문제 형식을 하나 이상 골라 주세요');
+  const question_types = types.length === TYPE_ORDER.length ? null : TYPE_ORDER.filter(t => types.includes(t));   // 모두 고르면 비워 둠(=전체)
+  const { data: t, error } = await sb.from('tests').insert({ academy_id: academy.id, list_id, title, question_count: n, question_types, created_by: me.id }).select().single();
   if (error) return toast(errText(error));
   const { error: e2 } = await sb.from('test_classes').insert(classIds.map(class_id => ({ academy_id: academy.id, test_id: t.id, class_id })));
   if (e2) return toast(errText(e2));
   $('tsTitle').value = ''; $('tsList').value = ''; $('tsCount').value = '';
   $('tsClasses').querySelectorAll('input').forEach(i => i.checked = false);
+  renderTypeChecks(); tsInfo = null; updateTypeHint();
   toast('시험을 만들었어요. 학생 화면에 바로 보여요'); loadAll();
 }
 async function editTestClasses(id) {

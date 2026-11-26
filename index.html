@@ -66,7 +66,8 @@
   .opts.long button{font-size:16px}
   .opts button:hover{border-color:var(--main)}
   .typein{display:flex;gap:10px}
-  .typein input{flex:1;font-size:24px;padding:14px 16px;border:2px solid var(--line);border-radius:12px}
+  .typein button{flex:none}
+  .typein input{flex:1;min-width:0;font-size:24px;padding:14px 16px;border:2px solid var(--line);border-radius:12px}
   .typein input:focus{outline:none;border-color:var(--main)}
   .speak{display:block;margin:10px auto 28px;font-size:44px;width:120px;height:120px;border-radius:50%;background:var(--soft);border:0}
   .speak:disabled{opacity:.35}
@@ -165,7 +166,10 @@
 
 <script>
 // ==== QUIZ-CORE START ====  (문제 만들기·채점 — 화면과 상관없는 부분)
-const RATIO = { en2ko_mc: .20, ko2en_mc: .20, spelling: .20, dictation: .15, blank: .15, def: .10 };
+// 형식별 기본 비율 (영영뜻 3형식은 합쳐서 10%)
+const WEIGHT = { en2ko_mc: .20, ko2en_mc: .20, spelling: .20, dictation: .15, blank: .15,
+                 def2en_mc: .10 / 3, def_spelling: .10 / 3, en2def_mc: .10 / 3 };
+const ALL_TYPES = Object.keys(WEIGHT);
 const DEF_TYPES = ['def2en_mc', 'def_spelling', 'en2def_mc'];
 const SECONDS = { def2en_mc: 25, def_spelling: 25, en2def_mc: 30 };   // 나머지는 20초
 const secondsFor = type => SECONDS[type] || 20;
@@ -187,7 +191,7 @@ function splitCounts(n, ratio) {
   const raw = keys.map(k => ratio[k] * n);
   const out = Object.fromEntries(keys.map((k, i) => [k, Math.floor(raw[i])]));
   let left = n - Object.values(out).reduce((a, b) => a + b, 0);
-  keys.map((k, i) => [k, raw[i] - Math.floor(raw[i])]).sort((a, b) => b[1] - a[1])
+  shuffle(keys.map((k, i) => [k, raw[i] - Math.floor(raw[i])])).sort((a, b) => b[1] - a[1])   // 같은 나머지는 무작위로
       .forEach(([k]) => { if (left > 0) { out[k]++; left--; } });
   return out;
 }
@@ -205,38 +209,60 @@ function makeOptions(answer, pool, getText) {
   return shuffle(opts);
 }
 
-// 시험지 만들기
-function buildQuiz(words, questionCount, canSpeak = true) {
+// 이 단어로 이 형식을 낼 수 있는지
+function canUse(type, w, ctx) {
+  if (type === 'dictation') return ctx.canSpeak;
+  if (type === 'blank') return canBlank(w);
+  if (type === 'def2en_mc' || type === 'def_spelling') return !!w.definition;
+  if (type === 'en2def_mc') return !!w.definition && ctx.defCount >= 4;
+  return true;   // en2ko_mc, ko2en_mc, spelling
+}
+
+// 시험지 만들기 — allowed: 선생님이 고른 형식 (비어 있으면 8가지 모두)
+function buildQuiz(words, questionCount, canSpeak = true, allowed = null) {
   const n = Math.min(questionCount, words.length);
   const picked = shuffle(words).slice(0, n);
   const defWords = words.filter(w => w.definition);
-  const want = splitCounts(n, RATIO);
+  const ctx = { canSpeak, defCount: defWords.length };
+  const types = (allowed && allowed.length ? allowed : ALL_TYPES).filter(t => WEIGHT[t]);
 
-  // 영영뜻 몫을 세 형식에 골고루 나누기 (단어→영영뜻 객관식은 영영뜻 4개 이상일 때만)
-  const defTypes = DEF_TYPES.filter(t => t !== 'en2def_mc' || defWords.length >= 4);
-  const defWant = {};
-  shuffle(defTypes).forEach((t, i) => defWant[t] = Math.floor(want.def / defTypes.length) + (i < want.def % defTypes.length ? 1 : 0));
+  // 고른 형식끼리 기본 비율을 다시 나눔
+  const tot = types.reduce((a, t) => a + WEIGHT[t], 0);
+  const want = splitCounts(n, Object.fromEntries(types.map(t => [t, WEIGHT[t] / tot])));
 
-  // 조건이 있는 형식부터 해당 단어로 채우기
+  // 조건이 있는 형식부터 해당 단어로 채우기 (영영뜻이 적은 순서대로)
   const assign = new Map();   // word_id → type
   const free = () => picked.filter(w => !assign.has(w.id));
-  const fill = (type, count, ok) => {
-    for (const w of shuffle(free()).filter(ok).slice(0, count)) assign.set(w.id, type);
-  };
-  fill('en2def_mc',   defWant.en2def_mc   || 0, w => w.definition);
-  fill('def2en_mc',   defWant.def2en_mc   || 0, w => w.definition);
-  fill('def_spelling',defWant.def_spelling|| 0, w => w.definition);
-  fill('blank',       want.blank,              canBlank);
+  //   한 형식이 단어를 다 가져가지 않도록 형식마다 한 개씩 돌아가며 채움
+  const need = Object.fromEntries(['en2def_mc', 'def2en_mc', 'def_spelling', 'blank', 'dictation'].map(t => [t, want[t] || 0]));
+  let progress = true;
+  while (progress) {
+    progress = false;
+    for (const t of shuffle(Object.keys(need))) {
+      if (need[t] <= 0) continue;
+      const w = shuffle(free()).find(w => canUse(t, w, ctx));
+      if (w) { assign.set(w.id, t); need[t]--; progress = true; } else need[t] = 0;
+    }
+  }
 
-  // 남은 단어는 기본 형식으로 (비율대로, 모자란 몫은 돌아가며 채움)
-  const basic = canSpeak ? ['en2ko_mc', 'ko2en_mc', 'spelling', 'dictation'] : ['en2ko_mc', 'ko2en_mc', 'spelling'];
-  const rest = free();
-  const types = [];
-  basic.forEach(t => { for (let i = 0; i < (want[t] || 0); i++) types.push(t); });
-  if (!canSpeak) for (let i = 0; i < want.dictation; i++) types.push('spelling');
-  let k = 0; while (types.length < rest.length) types.push(basic[k++ % basic.length]);
-  const restTypes = shuffle(types).slice(0, rest.length);
-  rest.forEach((w, i) => assign.set(w.id, restTypes[i]));
+  // 남은 단어: 조건 없는 형식(영→뜻, 뜻→영, 철자)으로 비율대로, 모자란 몫은 돌아가며 채움
+  const basic = ['en2ko_mc', 'ko2en_mc', 'spelling'].filter(t => types.includes(t));
+  const rest = shuffle(free());
+  if (basic.length) {
+    const list = [];
+    basic.forEach(t => { for (let i = 0; i < (want[t] || 0); i++) list.push(t); });
+    let k = 0; while (list.length < rest.length) list.push(basic[k++ % basic.length]);
+    const restTypes = shuffle(list).slice(0, rest.length);
+    rest.forEach((w, i) => assign.set(w.id, restTypes[i]));
+  } else {
+    // 고른 형식이 모두 조건이 있는 형식일 때: 그 단어로 낼 수 있는 고른 형식 중 하나,
+    // 하나도 안 되면 가장 비슷한 형식으로 (듣기 불가 → 철자 쓰기, 그 밖 → 뜻 보고 단어 고르기)
+    rest.forEach(w => {
+      const ok = types.filter(t => canUse(t, w, ctx));
+      assign.set(w.id, ok.length ? ok[Math.floor(Math.random() * ok.length)]
+                                 : (types.includes('dictation') ? 'spelling' : 'ko2en_mc'));
+    });
+  }
 
   // 문제 만들기
   return shuffle(picked).map((w, i) => {
@@ -409,7 +435,7 @@ async function startTest(testId, title) {
     const words = await rpc('student_test_words', { p_token: session.token, p_test_id: testId }) || [];
     if (words.length < 1) throw new Error('시험 단어가 없어요. 선생님께 알려 주세요.');
     const ws = words.map(w => ({ id: w.word_id, word: w.word, meaning: w.meaning, example: w.example, definition: w.definition }));
-    current = { testId, title, questions: buildQuiz(ws, words[0].question_count, canSpeak), idx: -1, answers: [], startedAt: new Date().toISOString() };
+    current = { testId, title, questions: buildQuiz(ws, words[0].question_count, canSpeak, words[0].question_types), idx: -1, answers: [], startedAt: new Date().toISOString() };
     if (canSpeak) speak(' ');   // 휴대폰에서 첫 발음이 나오도록 미리 깨우기
     $('qTitle').textContent = title;
     show('vQuiz');
